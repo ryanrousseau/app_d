@@ -1,0 +1,99 @@
+name: Build app packages and create release
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+env:
+  OCTOPUS_SPACE: White Rock Global
+  OCTOPUS_PROJECT: App Template
+  OCTOPUS_PROJECT_ESCAPED: App_Template
+  OCTOPUS_SERVICE_ACCOUNT: 30026079-bb9c-4de1-8bbb-88d9c6b1f5be
+
+jobs:
+  deploy-project:
+    name: "Deploy project"
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+
+    outputs:
+      tasks: ${{ steps.deploy-release.outputs.server_tasks }}
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Login to Octopus Deploy 
+        uses: OctopusDeploy/login@v1
+        with: 
+          server: https://demo.octopus.app
+          service_account_id: ${{ env.OCTOPUS_SERVICE_ACCOUNT }}
+
+      - name: Set Version Number
+        id: version-generator
+        run: echo "version=$(date +'%Y.%m.%d').$GITHUB_RUN_NUMBER" >> $GITHUB_OUTPUT
+
+      - name: Create artifacts folder
+        run: |
+          mkdir "$GITHUB_WORKSPACE/artifacts"
+          mkdir "$GITHUB_WORKSPACE/artifacts/$OCTOPUS_PROJECT_ESCAPED.Infrastructure"
+          cp infra/*.json "$GITHUB_WORKSPACE/artifacts/$OCTOPUS_PROJECT_ESCAPED.Infrastructure"
+  
+      - name: Package "${{ env.OCTOPUS_PROJECT_ESCAPED }}".Infrastructure 🐙
+        uses: OctopusDeploy/create-zip-package-action@v3
+        with:
+          package_id: "${{ env.OCTOPUS_PROJECT_ESCAPED }}.Infrastructure"
+          version: "${{ steps.version-generator.outputs.version }}"
+          output_folder: "${{ github.workspace }}/artifacts"
+          base_path: "${{ github.workspace }}/artifacts/${{ env.OCTOPUS_PROJECT_ESCAPED }}.Infrastructure"
+          files: |
+            **/*.*
+  
+      - name: Publish Artifacts
+        uses: OctopusDeploy/push-package-action@v3
+        with:
+          packages: |
+            artifacts/${{ env.OCTOPUS_PROJECT_ESCAPED }}.Infrastructure.${{ steps.version-generator.outputs.version }}.zip
+
+      - name: Create a release in Octopus Deploy 🐙
+        id: create-release
+        uses: OctopusDeploy/create-release-action@v3
+        with:
+          project: "${{ env.OCTOPUS_PROJECT }}"
+          release_number: ${{ steps.version-generator.outputs.version }}
+          git_ref: ${{ (github.ref_type == 'tag' && github.event.repository.default_branch ) || (github.head_ref || github.ref) }}
+          git_commit: ${{ github.event.after || github.event.pull_request.head.sha }}
+
+      - uses: OctopusDeploy/deploy-release-tenanted-action@v3
+        id: "deploy-release"
+        name: "Deploy app to Development tenants 🐙"
+        with:
+          project: "${{ env.OCTOPUS_PROJECT }}"
+          release_number: ${{ steps.version-generator.outputs.version }}
+          environment: "Development"
+          tenant_tags: |
+            Environment Types/Development
+
+  wait-for-deployments:
+    name: Wait for the deployments
+    needs: [ deploy-project ]
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+    strategy:
+      matrix:
+        value: ${{ fromJson(needs.deploy-project.outputs.tasks) }}
+
+    steps:
+      - name: Login to Octopus Deploy 
+        uses: OctopusDeploy/login@v1
+        with: 
+          server: https://demo.octopus.app
+          service_account_id: ${{ env.OCTOPUS_SERVICE_ACCOUNT }}
+
+      - uses: OctopusDeploy/await-task-action@v3
+        name: Wait for deployment 🐙
+        id: "wait-for-deployment"
+        with:
+          server_task_id: ${{ matrix.value.serverTaskId }}
