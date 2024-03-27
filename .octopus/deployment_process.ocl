@@ -16,7 +16,7 @@ step "deploy-an-aws-cloudformation-template" {
             Octopus.Action.Package.DownloadOnTentacle = "False"
             Octopus.Action.Package.FeedId = "octopus-server-built-in"
             Octopus.Action.Package.JsonConfigurationVariablesTargets = "template.json, params.json"
-            Octopus.Action.Package.PackageId = "EKS_Template.Infrastructure"
+            Octopus.Action.Package.PackageId = "MSA.Infrastructure"
             OctopusUseBundledTooling = "False"
         }
         worker_pool = "hosted-ubuntu"
@@ -29,7 +29,7 @@ step "deploy-an-aws-cloudformation-template" {
         packages {
             acquisition_location = "Server"
             feed = "octopus-server-built-in"
-            package_id = "EKS_Template.Infrastructure"
+            package_id = "MSA.Infrastructure"
             properties = {
                 SelectionMode = "immediate"
             }
@@ -66,7 +66,7 @@ step "deploy-kubernetes-yaml" {
             file_path_filters = ["k8s/*.yaml"]
             git_credential_id = "GitCredentials-122"
             git_credential_type = "Library"
-            repository_uri = "https://github.com/ryanrousseau/app_template.git"
+            repository_uri = "https://github.com/ryanrousseau/app_d.git"
         }
     }
 }
